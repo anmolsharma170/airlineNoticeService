@@ -1,0 +1,5 @@
+.env
+node_modules
+combined.log;
+README_personal.md
+src/config/config.json
