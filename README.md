@@ -1,42 +1,128 @@
-This is a base node js project template, which anyone can use as it has been prepared, by keeping some of the most important code principles and project management recommendations. Feel free to change anything.
+# ✈️ Airplane Notification & Email Service
 
-src -> Inside the src folder all the actual source code regarding the project will reside, this will not include any kind of tests. (You might want to make separate tests folder)
+A robust, highly scalable, and fully decoupled microservice dedicated to handling notifications, email alerts, and background job processing for an Airline Booking System. This service ensures that critical real-time alerts (like booking confirmations and cancellations) are delivered efficiently without bringing down the performance of the main application.
 
-Lets take a look inside the src folder
+---
 
-config -> In this folder anything and everything regarding any configurations or setup of a library or module will be done. For example: setting up dotenv so that we can use the environment variables anywhere in a cleaner fashion, this is done in the server-config.js. One more example can be to setup you logging library that can help you to prepare meaningful logs, so configuration for this library should also be done here.
+## 🚀 Tech Stack
 
-routes -> In the routes folder, we register a route and the corresponding middleware and controllers to it.
+- **Backend Framework**: Node.js, Express.js
+- **Message Broker / Queue**: RabbitMQ (AMQP)
+- **Database**: MySQL
+- **ORM**: Sequelize (with Migrations & Seeders)
+- **Task Scheduling**: Node-Cron
+- **Email Client**: Nodemailer
+- **Logging**: Winston
+- **Architecture**: N-Tier Architecture (Controller - Service - Repository Pattern)
 
-middlewares -> they are just going to intercept the incoming requests where we can write our validators, authenticators etc.
+---
 
-controllers -> they are kind of the last middlewares as post them you call you business layer to execute the business logic. In controllers we just receive the incoming requests and data and then pass it to the business layer, and once business layer returns an output, we structure the API response in controllers and send the output.
+## 🧠 Engineering Problems Solved
 
-repositories -> this folder contains all the logic using which we interact the DB by writing queries, all the raw queries or ORM queries will go here.
+This project wasn't just built to send emails; it was engineered to solve real-world system design and scalability challenges commonly encountered in large-scale distributed systems:
 
-services -> contains the buiness logic and interacts with repositories for data from the database
+### 1. Asynchronous Decoupling via Message Queues (RabbitMQ)
+* **The Problem:** Sending out booking confirmation emails synchronously during the flight booking API call tightly couples the services. Network latency with SMTP servers causes the main API thread to block, drastically increasing response times for the end client.
+* **The Solution:** Implemented **RabbitMQ** to fully decouple email dispatching from the main server. The core booking service simply publishes a payload to the `noti-queue`. This microservice independently consumes the queue and processes the email in the background. **Result:** API latency is massively reduced, and both services can scale horizontally independent of one another.
 
-utils -> contains helper methods, error classes etc.
+### 2. Fault Tolerance & State Recovery
+* **The Problem:** What happens if the email server is temporarily down, or the notification service crashes in the middle of processing? Losing a payment confirmation notification is unacceptable.
+* **The Solution:** 
+  - Maintained a `Ticket` table in the MySQL database to track the exact lifecycle of every notification (`PENDING`, `SUCCESS`, `FAILED`).
+  - Utilized **Message Acknowledgment (`channel.ack`)** in RabbitMQ. A message is only dequeued once it is successfully parsed and dispatched.
+  - If a failure occurs, the ticket remains in the `PENDING` state, serving as a reliable fallback for our background workers.
 
-Setup the project
-Download this template from github and open it in your favourite text editor.
-Go inside the folder path and execute the following command:
+### 3. Automated Background Processing (Cron Jobs)
+* **The Problem:** The system needs a way to periodically sweep for anomalies—like retrying pending failed emails or cleaning up expired, unconfirmed bookings automatically, without manual intervention.
+* **The Solution:** Integrated `node-cron` to execute recurring background processes. This guarantees that background operations (like polling the `TicketRepository` for pending states every N minutes) run reliably, maintaining the system's eventual consistency.
+
+### 4. Enterprise-Grade Separation of Concerns
+* **The Problem:** Monolithic codebases where raw SQL queries, business logic, and HTTP request handling coexist in the same file become impossible to maintain or test.
+* **The Solution:** Adopted a strict **Repository Pattern** and **Layered Architecture**:
+  - **Routes & Middlewares:** Handle intercepting and validating requests.
+  - **Controllers:** Manage formatting of request/response lifecycles.
+  - **Services:** Isolate pure business rules (e.g., `EmailService`).
+  - **Repositories:** Centralize all Data Access and ORM interaction logic (`TicketRepository`, `CrudRepository`).
+
+### 5. Standardized Error Handling & Unified Logging
+* **The Problem:** Inconsistent API responses and console.log debugging make production issues a nightmare to trace.
+* **The Solution:** 
+  - Built generic wrapper classes (`SuccessResponse`, `ErrorResponse`, `AppError`) to guarantee uniform API responses across the board.
+  - Replaced native console logs with **Winston**, allowing for granular log levels, timestamping, and persisting logs to external files when necessary.
+
+---
+
+## 📁 Project Structure
+
+```text
+src/
+ ├── config/          # Configurations for Server, Logger, Database, and Nodemailer
+ ├── controllers/     # Request/Response formatting & Route handlers
+ ├── middlewares/     # Request interceptors & validators 
+ ├── migrations/      # DB Schema version control
+ ├── models/          # Sequelize JS Models (Ticket)
+ ├── repositories/    # Database interaction logic (CrudRepository, TicketRepository)
+ ├── routes/          # API Route definitions mapping to controllers
+ ├── services/        # Core business logic (EmailService)
+ └── utils/           # Helper classes, Error handling, Cron Jobs definitions
+```
+
+---
+
+## 🛠️ Local Setup & Installation
+
+Follow these steps to get the microservice running on your local machine:
+
+### 1. Prerequisites 
+- **Node.js** (v14 or higher)
+- **MySQL** Server installed and running
+- **RabbitMQ** Server installed and running locally (`amqp://localhost`)
+
+### 2. Clone the Repository
+```bash
+git clone <repository-url>
+cd airplanenoticeservice
+```
+
+### 3. Install Dependencies
+```bash
 npm install
-In the root directory create a .env file and add the following env variables
+```
 
-    PORT=<port number of your choice>
-ex:
+### 4. Environment Variables
+Create a `.env` file in the root directory and configure the following variables:
+```env
+PORT=3004
+# Add your database configurations and email credentials here
+# MAIL_ID=your_email@gmail.com
+# MAIL_PASS=your_app_password
+```
 
-    PORT=3000
-go inside the src folder and execute the following command:
+### 5. Database Configuration & Setup
+Update the `src/config/config.json` file with your MySQL `username`, `password`, and `database` name. Then run:
 
-  npx sequelize init
-By executing the above command you will get migrations and seeders folder along with a config.json inside the config folder.
+```bash
+# Initialize the database structures
+npx sequelize db:create
+npx sequelize db:migrate
+```
 
-If you're setting up your development environment, then write the username of your db, password of your db and in dialect mention whatever db you are using for ex: mysql, mariadb etc
-
-If you're setting up test or prod environment, make sure you also replace the host with the hosted db url.
-
-To run the server execute
-
+### 6. Run the Service
+```bash
+# Runs the server using nodemon for hot-reloading
 npm run dev
+```
+
+If everything is configured correctly, your terminal should display:
+```
+Successfully started the server on PORT: 3004
+queue connected successfully
+```
+
+---
+
+## 🎯 Final Thoughts
+
+This microservice acts as the backbone communication layer of the airline ecosystem. It demonstrates a clear understanding of **Event-Driven Architecture**, **Asynchronous Workflows**, **Database Design**, and writing clean, scalable Node.js code intended for high-availability environments. 
+
+*Designed and engineered with passion.*
